@@ -1,0 +1,683 @@
+---
+title: "Linguist List Job Scraping Tool"
+author: "Jesse Harris"
+date: "January 15, 2018"
+output:
+  html_document:
+    fig_height: 5
+    fig_width: 8
+  pdf_document: default
+---
+
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(include = FALSE)
+```
+
+
+```{r}
+# Load libraries
+library(magrittr)
+library(stringr)
+library(rvest)
+library(tidyr)
+library(ggplot2)
+library(gsubfn)
+library(htmlTable)
+library(plotly)
+
+
+# Add directories
+ifelse(!dir.exists(file.path('./', 'Data')), dir.create(file.path('./', 'Data')), FALSE)
+ifelse(!dir.exists(file.path('./', 'Figures')), dir.create(file.path('./', 'Figures')), FALSE)
+
+
+```
+
+
+# Documentation
+
+Use this R Markdown script to scrape Linguist List for job trends with the following libraries: 
+
+- magrittr
+- stringr
+- rvest
+- tidyr
+- ggplot2
+- gsubfn
+- htmlTable
+- plotly
+
+
+Use the code as you like, but please just give a [shout out](http://linguistics.ucla.edu/person/jesse-harris/) if you use this script.  **Comments are most welcome!**
+
+The script is maintained on a githib repository [here](https://github.com/jaharris/linglist-scrape).
+
+
+### Methodology
+
+The script downloads the Linguist List job posting [archives](http://linguistlist.org/jobs/browse-previous-jobs2.cfm) for the years specified below. After some reformatting, it removes all but tenture track job postings and categorizes the jobs according to keywords listed in the posting. The method for categorization largely follows previous efforts by Chris Potts, Heidi Harley, Stephanie Shih, and Rebecca Starr (see the Language Log postings on the [2008 data](http://languagelog.ldc.upenn.edu/nll/?p=1067), [2009 data](http://languagelog.ldc.upenn.edu/nll/?p=1491), and [2009-2012 data](http://languagelog.ldc.upenn.edu/nll/?p=4349)).
+
+
+
+
+
+Fields currently reported are limited to the following fields, closely following the procedure discused [here](http://languagelog.ldc.upenn.edu/nll/?p=4349).
+
+
+```{r, include = TRUE, echo = FALSE}
+fields <- c('phonetics', 'phonology', 'morphology', 'syntax', 'semantics', 'historical', 'sociolinguistics', 'psycholinguistics', 'langcog', 'computational', 'acquisition', 'fieldwork')
+
+fields
+# field.list <- toString(c(paste(fields[-length(fields)], collapse = ', '), paste(' and', fields[length(fields)])))
+
+```
+
+
+**Important caveat:** The numbers reported here have been compiled without reading the actual post, and are limited to the keywords listed in the post itself. I make no claims regarding the accuracy of the categorization. In addition, some job postings may classified within multiple fields (e.g., syntax and morphology), leading to double counting (but see my attempt to normalize categorizes of the postings). 
+
+
+### Output
+
+Two kinds of files are produced by the script: data files in csv format, and plots in pdf format.
+
+##### Data
+
+The script produces three csv files with data from the period of interest: 
+
+1. All the jobs data after post-processing (including the original job listing),
+2. All the tenure track jobs in the fields of interest, and
+3. A basic summary of the number of jobs listed per year in each field.
+
+
+##### Plots
+The script outputs a plot summarizing the average number of jobs posted for each field and a plot showing how many jobs were advertised in a single year. Plots are printed directly to pdf format.
+
+### Set years here
+
+
+Enter years to search in the R markdown file here. 
+
+```{r, include = TRUE}
+start = 2004
+end = 2017
+dates <- start:end
+```
+
+Set to search Linguist List from `r  start` to `r end`.
+
+
+
+**NB.** Start date cannot be before 2000. Note also that there are very few job advertisements before 2004.The remainder of the script should run without additional input.
+
+
+
+You can also decide whether you want to include jobs with Applied Linguistics in the listing by changing the *no.applied* variable to `FALSE'. 
+
+
+```{r, include = TRUE}
+no.applied <- TRUE
+```
+
+
+
+
+```{r}
+################################## GETTING DATA ##################################
+# Create empty data frame
+df <- data.frame(year = character(0), html = character(0))
+# df
+
+# Select css tag
+selector_name = '.issue-msg'
+
+# For loop to download html from Language List by year
+for (year in dates) {
+	dl <- read_html(paste('http://linguistlist.org/issues/issues-by-topic.cfm?topic=7&y=', year, sep=''))
+	temp <- data.frame(year = year, html = html_nodes(x = dl, css = selector_name) %>% html_text())
+	df <- rbind(df, temp)
+	print(paste('Done with', year))
+}
+
+# Convert html to UTF-8 encoding
+df$html <- enc2utf8(as.character(df$html))
+
+head(df)
+```
+
+```{r}
+################################## EXTRACTING DATA ##################################
+
+
+# ----------------------------------
+# Convert ampersand space in html of listing
+df$html2 <- gsub('   ', '&&', df$html)
+
+
+# NB. At this point, there may be a few errors. It might be wise to look at resulting file and make adjustments to columns by hand as needed. 
+
+# Correcting errors in the html2 column. 
+
+fixme <- list(
+				'Chinese,' = 'Chinese;', 
+				'Grammaticalization,' = 'Grammaticalization;', 
+				'Morphology,' = 'Morphology;', 				
+				'Semantics,' = 'Semantics;', 				
+				'Syntax,' = 'Syntax;', 
+				'Phonetics,' = 'Phonetics;', 
+				'Phonology,' = 'Phonology;',
+				'Phonetician,' = 'Phonetician;',					
+				'Phonetician,' = 'Phonetician;',				
+				'Linguist,' = 'Linguist;',	
+				'Language,' = 'Language;', 
+				'fMRI,' = 'fMRI;', 								
+				'Jobs:' = 'Jobs', 												
+				'Language,' = 'Language;',														
+				'Typology,' = 'Typology;',
+				'Modified:' = 'Modified -', 				
+				'Modified Issue:' = 'Modified issue -', 				
+				'Modified Re:' = 'Modified Re -', 					
+				'chair,' = 'chair',													
+				'Morphosyntax,' = 'Morphosyntax;',
+				': Syntax,' = '; Syntax;',				
+				'Documentation,' = 'Documentation;',
+				'; Visiting' = ': Visiting;',				
+				'Linguististics,' = 'Linguistics;',
+				'Dialectology,' = 'Dialectology;',					
+				'Teaching,' = 'Teaching;',
+				'Pragmatic,' = 'Pragmatics;',
+				'Translation,' = 'Translation;',				
+				'Creation,' = 'Creation;',										
+				'Hebrew,' = 'Hebrew;',
+				'Pragmatics,' = 'Pragmatics;',				
+				'Acquisition,' = 'Acquisition;',
+				';Assistant' = 'Assistant',				
+				'Ling,' = 'Linguistics;',
+				'Disorders,' = 'Disorders;',
+				'Analysis,' = 'Analysis;',				
+				'Languages,' = 'Languages;',
+				'Lexiography,' = 'Lexiography;',				
+				'Education: Language' = 'Education; Language',			
+				'Movement,' = 'Movement;',							
+				'Sociolinguistics,' = 'Sociolinguistics;',					
+				'Culture,' = 'Culture;',					
+				': Computational Linguist;' = ': Computational Linguist,',
+				'; Assistant Professor' = ': ;Assistant Professor',	
+				'Editor,' = 'Editor;', 
+				'Theory,' = 'Theory;', 
+				'Theories,' = 'Theories;', 				
+ 				'Psycholinguistics,' = 'Psycholinguistics;',
+				'Variation,' = 'Variation;', 				
+				'Neuroscience,' = 'Neuroscience;',				
+				'Linguistics,' = 'Linguistics;', 
+				'Reasoning,' = 'Reasoning;',				
+				'Naming,' = 'Naming;', 
+				'Nomenclature,' = 'Nomenclature;',					
+				'Logic,' = 'Logic;', 								
+				'Asian,' = 'Asian;',
+				'Island,' = 'Island;',				
+				'English,' = 'English;', 				
+				'Spanish,' = 'Spanish;',
+				'Arabic,' = 'Arabic;', 				
+				'Spanish,' = 'Spanish;',	
+				'Russian,' = 'Russian;',					
+				'Quichua,' = 'Quichua;',					
+				'Gaelic,' = 'Gaelic;',					
+				'Farsi,' = 'Farsi;',					
+				'Dari,' = 'Dari;',					
+				'Tajik,' = 'Tajik;',					
+				'French,' = 'French;',					
+				'Dutch,' = 'Dutch;',					
+				'Japanese,' = 'Japanese;',			
+				'Dutch,' = 'Dutch;',					
+				'Greek,' = 'Greek;',	
+				'Pashto,' = 'Pashto;',									
+				'Aramaic,' = 'Aramaic;',				
+				'Pashto,' = 'Pashto;',									
+				'Saami,' = 'Saami;',					
+				'German,' = 'German;'					
+			)
+
+
+# Find and replace with gsubfn
+df$html2 <- gsubfn(paste(names(fixme), collapse= '|'),fixme, df$html2)
+
+
+
+
+# ----------------------------------
+# String to split posting
+# NB. Notes on string splitting:
+
+# Position 1. Before && for contact information
+# Position 2: From && until the : lists keywords
+# Position 3: After the : lists rank
+# Position 4: After the , is the hiring agency (university, corporation, etc.)
+# Position 5: After another , is the location / country (usually)
+
+# Basic string to split html
+string <- paste(c('&&',': ', ', '), collapse = '|')
+string
+
+# Use str_split to split sentence and extract columns, fixed = 5 to avoid catching too much material; create new column names.
+df$contact <- str_split_fixed(df$html2, string, 5)[,1]
+df$keywords <- str_split_fixed(df$html2, string, 5)[,2]
+df$rank <- str_split_fixed(df$html2, string, 5)[,3]
+df$institution <- str_split_fixed(df$html2, string, 5)[,4]
+df$location <- str_split_fixed(df$html2, string, 5)[,5]
+
+
+# -----------------
+# Remove Applied Linguistics Jobs
+
+if (no.applied == TRUE) {
+df <- subset(df, !str_detect(tolower(df$keywords), paste(c('applied', 'anthro',  'l2 acquisition', 'second', 'language teaching', 'teaching methodology'), collapse = '|')))
+}
+
+
+
+
+```
+
+```{r}
+################################## TENURE TRACK JOBS ##################################
+
+# Collect tenure track positions only
+ten <- paste(c('assistant', 'asst', 'open rank', 'any rank'), collapse = '|')
+short <- paste(c('visiting', 'term', 'editor', 'acting',  'scientist', 'junior', 'year', 'post', 'fellow', 'scientific', 'development', 'instructor', 'part', 'curator', 'contract', 'doctoral', 'lab manager', 'sessional', 'teaching assistant', 'program assistant', 'assistant director', 'student', 'predoc',  'prae doc', 'research assistant', 'non-tenure', 'executive assistant', 'lab assistant', 'bank manager', 'adjunct', 'asst director', 'technical assistant', 'research asst', 'substitute', 'teaching asst'), collapse = '|')
+
+df.tt <- subset(df, str_detect(tolower(rank), ten) & 
+		str_detect(tolower(rank), short) == F)
+
+# Remove positions advertised as 'lecturer' unless in UK
+uk <- paste(c('united kingdom', 'uk'), collapse = '|')
+
+df.tt <- 
+	subset(df.tt,
+	# UK
+	 ((str_detect(tolower(location), uk) & 
+	  (str_detect(tolower(rank), 'lecturer')) |
+	# Outside UK
+	 (!(str_detect(tolower(location), uk)  & 
+	  !(str_detect(tolower(rank), 'lecturer'))
+	)))))
+
+
+
+# List all tenure track ranks
+levels(as.factor(df.tt$rank))
+```
+
+
+
+```{r}
+################################## SUMMARIZATION ##################################
+
+# -----------------------------
+# Fields of interest:
+
+# Method from Language Log post:
+# http://languagelog.ldc.upenn.edu/nll/?p=4349
+
+# sociolinguistics: variation, discourse analysis, socio, anthro
+# psycholinguistics: psychology, psycholinguistics (added neuro)
+# cognitive science: cognition, cognitive
+# computational: comp, nlp, natural language processing, machine translation
+
+# ADDED
+# acquisition
+# fieldwork
+
+
+# Phonetics
+df.tt$phonetics <- ifelse(str_detect(tolower(df.tt$keywords), 'phonetics'), 1, 0)
+
+# Phonology
+df.tt$phonology <- ifelse(str_detect(tolower(df.tt$keywords), 'phonology'), 1, 0)
+
+# Morphology
+df.tt$morphology <- ifelse(str_detect(tolower(df.tt$keywords), 'morphology'), 1, 0)
+
+# Syntax
+df.tt$syntax <- ifelse(str_detect(tolower(df.tt$keywords), 'syntax'), 1, 0)
+
+# Semantics
+df.tt$semantics <- ifelse(str_detect(tolower(df.tt$keywords), 'semantic'), 1, 0)
+
+# Historical
+df.tt$historical <- ifelse(str_detect(tolower(df.tt$keywords), paste(c('historical', 'indo'), collapse = '|')), 1, 0)
+
+# Sociolinguistics
+df.tt$sociolinguistics <- ifelse(str_detect(tolower(df.tt$keywords), paste(c('variation', 'discourse analysis', 'socio', 'anthro'), collapse = '|')), 1, 0)
+
+# Psycholinguistics (including neuro)
+# df.tt$psycholinguistics <- ifelse(str_detect(tolower(df.tt$keywords), 'psycho'), 1, 0)
+df.tt$psycholinguistics <- ifelse(str_detect(tolower(df.tt$keywords), paste(c('psycho', 'neuro'), collapse = '|')), 1, 0)
+
+# Acquisition
+df.tt$acquisition <- ifelse(str_detect(tolower(df.tt$keywords), 'acquisition'), 1, 0)
+
+# Neurolinguistics
+# df.tt$neuroling <- ifelse(str_detect(tolower(df.tt$keywords), 'neuro'), 1, 0)
+
+# Language and cognition
+df.tt$langcog <- ifelse(str_detect(tolower(df.tt$keywords), paste(c('cognition', 'cognitive'), collapse = '|')), 1, 0)
+
+# Computational
+df.tt$computational <- ifelse(str_detect(tolower(df.tt$keywords), paste(c('comp', 'nlp', 'natural language processing', 'machine translation'), collapse = '|')), 1, 0)
+
+# Fieldwork
+df.tt$fieldwork <- ifelse(str_detect(tolower(df.tt$keywords), paste(c('aboriginal', 'documentation', 'fieldwork', 'revitatlization', 'native american'), collapse = '|')), 1, 0)
+
+
+
+# -----------------------------
+# List of all fields
+# fields <- c('phonetics', 'phonology', 'morphology', 'syntax', 'semantics', 'historical', 'sociolinguistics', 'psycholinguistics', 'langcog', 'computational', 'acquisition', 'neuroling')
+
+fields <- sort(c('phonetics', 'phonology', 'morphology', 'syntax', 'semantics', 'historical', 'sociolinguistics', 'psycholinguistics', 'langcog', 'computational', 'acquisition', 'fieldwork'))
+
+
+fields
+
+# Summarization by year
+tt.year <- as.data.frame(lapply(df.tt[fields], tapply, INDEX = df.tt$year, sum), levels = fields)
+
+# Add year column
+tt.year$year <- as.numeric(rownames(tt.year))
+
+
+# Convert from wide to long format
+df.tt.sum <- tt.year %>% gather(field, year)
+df.tt.sum$field <- factor(df.tt.sum$field, levels = fields)
+
+colnames(df.tt.sum) <- c('year', 'field', 'jobs')
+
+
+# Print out number of jobs posted by year:
+tot.year <- with(df.tt.sum, tapply(jobs, list(field, year), sum)); tot.year
+
+
+# Print out total number of jobs posted in period:
+tot.all <- with(df.tt.sum, tapply(jobs, field, sum)); tot.all
+
+# Alternative for sanity check
+# sapply(df.tt[fields], sum, INDEX = df.tt$fields)
+
+df.tt.sum$field <- as.factor(df.tt.sum$field)
+
+```
+
+```{r}
+################################## VISUALIZATION ##################################
+
+
+# Trend lines using ggplot2
+
+trends <- ggplot(df.tt.sum, aes(year, jobs, color = field)) +
+geom_point(size = 4) +
+geom_line(size = 2) +
+scale_x_continuous(breaks = dates) +
+scale_color_discrete(name = 'Field') +
+ggtitle(paste('Tenure track jobs on Linguist List:', start, '-', end)) +
+ylim(0, 3 +max(df.tt.sum$jobs)) +
+ylab('Number of jobs posted') + xlab('Year')
+
+trends <- trends +
+theme(plot.title = element_text(size = 22, face = 'bold'), 
+		axis.title.x = element_text(size = 16, face = 'italic'),
+		axis.title.y = element_text(size = 16, face = 'italic'),
+		axis.text = element_text(size = 12),
+		legend.title = element_text(size = 16), 
+		legend.title.align = .5
+)
+
+trends
+
+# Save plot
+ggsave(plot=trends, filename= paste('Figures/TT_Trends_',start,'-',end,'.pdf',sep = ''), height=8, width=14)
+
+
+yearly <- ggplot(df.tt.sum, aes(field, jobs)) + geom_boxplot(aes(color = field)) + 
+ggtitle(paste('Average tenure track jobs on Linguist List:', start, '-', end)) +
+ylab('Number of jobs posted') + xlab('Field')
+
+yearly <- yearly + 
+theme(plot.title = element_text(size = 22, face = 'bold'), 
+		axis.title.x = element_text(size = 16, face = 'italic'),
+		axis.title.y = element_text(size = 16, face = 'italic'),
+		axis.text = element_text(size = 12), 
+		legend.position = "none"
+)
+
+yearly
+
+# Save plot
+ggsave(plot= yearly, filename= paste('Figures/TT_Total_',start,'-',end,'.pdf',sep = ''), height=8, width=14)
+
+```
+
+```{r}
+################################## WRITE DATA ##################################
+
+# Write data to csv files
+write.csv(df, paste('Data/All_jobs',start,'-',end,'.csv',sep = ''), fileEncoding = 'UTF-8')
+write.csv(df.tt, paste('Data/Tenure_track_jobs',start,'-',end,'.csv',sep = ''), fileEncoding = 'UTF-8')
+write.csv(df.tt.sum, paste('Data/Tenure_track_jobs_summary',start,'-',end,'.csv',sep = ''), fileEncoding = 'UTF-8')
+```
+
+
+### Tenure track job listings from `r start` to `r end`.
+
+
+```{r, include = TRUE, echo = FALSE}
+# totals <- data.frame(tot.year, tot.all)
+
+totals <- addmargins(tot.year)
+colnames(totals) <-  c(as.character(dates), 'Total')
+rownames(totals) <- c(rownames(tot.year), 'Total')
+
+htmlTable(totals, col.rgroup = c("none", "#F7F7F7"), caption = "Average number of jobs posted in period by year.", css.cell = 'padding: 2px 13px 2px;')
+
+```
+
+<br><br><br><br>
+
+
+
+```{r,  include = TRUE, echo = FALSE}
+yearly2 <- yearly + 
+theme(plot.title = element_text(size = 16, face = 'bold'), 
+		axis.title.x = element_text(size = 12, face = 'italic'),
+		axis.title.y = element_text(size = 16, face = 'italic'),
+		axis.text.x = element_text(size = 12, angle = 45, hjust = 1, vjust = 2),
+	  axis.text.y = element_text(size = 12),
+		legend.position = "none"
+)
+
+ggplotly(yearly2)
+
+```
+
+<br><br>
+
+```{r, include = TRUE, echo = FALSE}
+trends2 <- trends +
+theme(plot.title = element_text(size = 16, face = 'bold'), 
+		axis.title.x = element_text(size = 16, face = 'italic'),
+		axis.title.y = element_text(size = 16, face = 'italic'),
+		axis.text.x = element_text(size = 12, angle = 45, hjust = 1),
+	  axis.text.y = element_text(size = 12),	
+		legend.title = element_text(size = 16), 
+		legend.title.align = .5
+)
+
+ggplotly(trends2)
+
+```
+
+
+
+
+### Normalizing the postings
+
+Some of the job postings have multiple keywords. I've normalized these postings by dividing each job by how many total fields it references. For example, if a posting were listed with both *semantics* and *psycholinguistics* as keywords, the posting would only contribute 0.5 to the overall total of jobs in each field. 
+
+
+```{r}
+# --------------------------
+# Normalization
+
+# Remove acquisition
+# df.tt$acquisition <- NULL
+
+# Add column with number of keywords
+df.tt$count <- rowSums(df.tt[, c(fields)])
+
+# Create 
+for (f in fields) {
+	cn <- paste(f, 'norm', sep = '.')
+	df.tt[[cn]] <- ifelse(df.tt$count > 0,
+		df.tt[[f]]/df.tt$count, 0)
+}
+
+
+fields.norm <- paste(fields, 'norm', sep = '.')
+
+
+# Summarization by year
+tt.year.norm <- as.data.frame(lapply(df.tt[fields.norm], tapply, INDEX = df.tt$year, sum), levels = fields.norm)
+
+# Convert colnames to fields
+# colnames(tt.year.norm) <- fields
+
+# Create margin table for display
+# norm.totals <- addmargins(as.matrix(tt.year.norm))
+# colnames(norm.totals) <-  c(as.character(fields), 'Total')
+# rownames(norm.totals) <- c(dates, 'Total')
+
+# Add year column
+tt.year.norm$year <- as.numeric(rownames(tt.year.norm))
+
+
+# Convert from wide to long format
+df.tt.norm <- tt.year.norm %>% gather(fields.norm, year)
+
+df.tt.norm$fields.norm <- factor(df.tt.norm$fields.norm, levels = fields.norm)
+
+colnames(df.tt.norm) <- c('year', 'field', 'jobs.norm')
+
+df.tt.norm$field <- as.factor(df.tt.norm$field)
+
+# Remove .norm
+df.tt.norm$field <- gsub('.norm', '', df.tt.norm$field)
+
+
+
+# Trend lines using ggplot2
+
+trends.norm <- ggplot(df.tt.norm, aes(year, jobs.norm, color = field)) +
+geom_point(size = 4) +
+geom_line(size = 2) +
+scale_x_continuous(breaks = dates) +
+scale_color_discrete(name = '', labels = fields) +
+ggtitle(paste('Normalized tenure track jobs on Linguist List:', start, '-', end)) +
+ylab('Number of jobs') + xlab('Year')
+
+trends.norm <- trends.norm +
+theme(plot.title = element_text(size = 22, face = 'bold'), 
+		axis.title.x = element_text(size = 16, face = 'italic'),
+		axis.title.y = element_text(size = 16, face = 'italic'),
+		axis.text = element_text(size = 12),
+		legend.title = element_text(size = 16), 
+		legend.title.align = .5
+)
+
+trends.norm
+
+# Save plot
+ggsave(plot=trends, filename= paste('Figures/TT_Trends_Norm_',start,'-',end,'.pdf',sep = ''), height=8, width=14)
+
+
+jobs.norm <- ggplot(df.tt.norm, aes(field, jobs.norm)) + geom_boxplot(aes(color = field)) + 
+ggtitle(paste('Normalized tenure track jobs on Linguist List:', start, '-', end)) +
+ylab('Number of jobs') + xlab('Field') +
+scale_x_discrete(labels = fields)
+
+jobs.norm <- jobs.norm +
+theme(plot.title = element_text(size = 22, face = 'bold'), 
+		axis.title.x = element_text(size = 16, face = 'italic'),
+		axis.title.y = element_text(size = 16, face = 'italic'),
+		axis.text = element_text(size = 12), 
+		legend.position = "none"
+)
+
+jobs.norm
+
+
+# Save plot
+ggsave(plot= yearly, filename= paste('Figures/TT_Total_Norm_',start,'-',end,'.pdf',sep = ''), height=8, width=14)
+
+```
+
+
+
+<br><br>
+
+```{r, include = TRUE, echo = FALSE}
+
+# Create normalized data for printing to table
+tt.year.norm$year <- NULL
+norm.totals <- as.data.frame(addmargins(as.matrix(tt.year.norm)))
+
+# Change colnames and rownames
+colnames(norm.totals) <-  c(as.character(fields), 'Total')
+rownames(norm.totals) <- c(rownames(norm.totals)[-length(rownames(norm.totals))], 'Total')
+
+
+
+htmlTable(t(round(norm.totals, 2)), col.rgroup = c("none", "#F7F7F7"), caption = "Normalized average number of jobs posted in period by year.", css.cell = 'padding: 2px 9px 2px;')
+
+```
+
+
+
+<br><br>
+
+```{r, include = TRUE, echo = FALSE}
+
+
+# htmlTable(t(round(norm.totals),2), col.rgroup = c("none", "#F7F7F7"), caption = "Normalized average number of jobs posted in period by year.", css.cell = 'padding: 2px 13px 2px;')
+
+
+jobs.norm2 <- jobs.norm +
+theme(plot.title = element_text(size = 16, face = 'bold'), 
+		axis.title.x = element_text(size = 12, face = 'italic'),
+		axis.title.y = element_text(size = 16, face = 'italic'),
+		axis.text.x = element_text(size = 12, angle = 45, hjust = 1),
+	  axis.text.y = element_text(size = 12),
+		legend.position = "none"
+)
+
+ggplotly(jobs.norm2)
+
+```
+<br><br>
+
+```{r, include = TRUE, echo = FALSE}
+trends.norm2 <- trends.norm +
+theme(plot.title = element_text(size = 16, face = 'bold'), 
+		axis.title.x = element_text(size = 12, face = 'italic'),
+		axis.title.y = element_text(size = 16, face = 'italic'),
+		axis.text.x = element_text(size = 12, angle = 45, hjust = 1),
+	  axis.text.y = element_text(size = 12),
+		legend.title.align = .5
+)
+
+ggplotly(trends.norm2)
+
+```
+
+
