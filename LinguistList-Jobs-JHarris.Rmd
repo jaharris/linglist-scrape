@@ -246,7 +246,6 @@ df$html2 <- gsubfn(paste(names(fixme), collapse= '|'),fixme, df$html2)
 
 
 
-
 # ----------------------------------
 # String to split posting
 # NB. Notes on string splitting:
@@ -379,21 +378,25 @@ df.tt$fieldwork <- ifelse(str_detect(tolower(df.tt$keywords), paste(c('aborigina
 
 fields <- sort(c('phonetics', 'phonology', 'morphology', 'syntax', 'semantics', 'historical', 'sociolinguistics', 'psycholinguistics', 'langcog', 'computational', 'acquisition', 'fieldwork'))
 
-
 fields
 
 # Summarization by year
 tt.year <- as.data.frame(lapply(df.tt[fields], tapply, INDEX = df.tt$year, sum), levels = fields)
 
-# Add year column
-tt.year$year <- as.numeric(rownames(tt.year))
+tt.year
 
 
 # Convert from wide to long format
 df.tt.sum <- tt.year %>% gather(field, year)
-df.tt.sum$field <- factor(df.tt.sum$field, levels = fields)
+df.tt.sum
 
-colnames(df.tt.sum) <- c('year', 'field', 'jobs')
+# Add date column to convert to year
+df.tt.sum$date <- seq(start, end) 
+
+# Rename columns
+colnames(df.tt.sum) <- c('field', 'jobs', 'year')
+
+df.tt.sum$field <- factor(df.tt.sum$field, levels = fields)
 
 
 # Print out number of jobs posted by year:
@@ -558,18 +561,19 @@ tt.year.norm <- as.data.frame(lapply(df.tt[fields.norm], tapply, INDEX = df.tt$y
 # colnames(norm.totals) <-  c(as.character(fields), 'Total')
 # rownames(norm.totals) <- c(dates, 'Total')
 
-# Add year column
-tt.year.norm$year <- as.numeric(rownames(tt.year.norm))
-
 
 # Convert from wide to long format
 df.tt.norm <- tt.year.norm %>% gather(fields.norm, year)
 
+# Add date to convert to year
+df.tt.norm$date <- seq(start, end)
+
 df.tt.norm$fields.norm <- factor(df.tt.norm$fields.norm, levels = fields.norm)
 
-colnames(df.tt.norm) <- c('year', 'field', 'jobs.norm')
+colnames(df.tt.norm) <- c('field', 'jobs.norm', 'year')
 
-df.tt.norm$field <- as.factor(df.tt.norm$field)
+
+# df.tt.norm$field <- as.factor(df.tt.norm$field)
 
 # Remove .norm
 df.tt.norm$field <- gsub('.norm', '', df.tt.norm$field)
