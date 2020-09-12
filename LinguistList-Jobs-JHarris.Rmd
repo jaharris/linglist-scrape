@@ -1,7 +1,7 @@
 ---
 title: "Linguist List Job Scraping Tool"
 author: "Jesse Harris"
-date: "January 15, 2018"
+date: "January 15, 2018 - Updated September 12, 2020"
 output:
   html_document:
     fig_height: 5
@@ -51,7 +51,7 @@ Use this R Markdown script to scrape Linguist List for job trends with the follo
 - plotly
 
 
-Use the code as you like, but please just give a [shout out](http://linguistics.ucla.edu/person/jesse-harris/) if you use this script.  **Comments are most welcome!**
+Use the code as you like, but please just give a [shout out](https://jesseharris.netlify.app/) if you use this script.  **Comments are most welcome!**
 
 The script is maintained on a githib repository [here](https://github.com/jaharris/linglist-scrape).
 
@@ -81,7 +81,7 @@ fields
 
 ### Output
 
-Two kinds of files are produced by the script: data files in csv format, and plots in pdf format.
+Three kinds of file are produced by the script: a summary document in html, data files in csv format, and plots in pdf format.
 
 ##### Data
 
@@ -102,7 +102,7 @@ Enter years to search in the R markdown file here.
 
 ```{r, include = TRUE}
 start = 2004
-end = 2017
+end = 2019
 dates <- start:end
 ```
 
@@ -413,6 +413,8 @@ df.tt.sum$field <- as.factor(df.tt.sum$field)
 
 ```
 
+
+
 ```{r}
 ################################## VISUALIZATION ##################################
 
@@ -420,8 +422,8 @@ df.tt.sum$field <- as.factor(df.tt.sum$field)
 # Trend lines using ggplot2
 
 trends <- ggplot(df.tt.sum, aes(year, jobs, color = field)) +
-geom_point(size = 4) +
-geom_line(size = 2) +
+geom_point(size = 2) +
+geom_line(size = 1) +
 scale_x_continuous(breaks = dates) +
 scale_color_discrete(name = 'Field') +
 ggtitle(paste('Tenure track jobs on Linguist List:', start, '-', end)) +
@@ -455,12 +457,17 @@ theme(plot.title = element_text(size = 22, face = 'bold'),
 		legend.position = "none"
 )
 
-yearly
 
 # Save plot
 ggsave(plot= yearly, filename= paste('Figures/TT_Total_',start,'-',end,'.pdf',sep = ''), height=8, width=14)
 
 ```
+
+
+```{r}
+yearly
+```
+
 
 ```{r}
 ################################## WRITE DATA ##################################
@@ -486,7 +493,11 @@ htmlTable(totals, col.rgroup = c("none", "#F7F7F7"), caption = "Average number o
 
 ```
 
-<br><br><br><br>
+<br><br>
+
+<b>Hover over the boxes to view more information about the data: </b> 
+
+<br><br>
 
 
 
@@ -503,8 +514,13 @@ theme(plot.title = element_text(size = 16, face = 'bold'),
 ggplotly(yearly2)
 
 ```
+<br>
+<br>
 
-<br><br>
+<b>Click on the legend to toggle the visibiity of a subfield:</b>
+
+<br>
+<br>
 
 ```{r, include = TRUE, echo = FALSE}
 trends2 <- trends +
@@ -583,8 +599,8 @@ df.tt.norm$field <- gsub('.norm', '', df.tt.norm$field)
 # Trend lines using ggplot2
 
 trends.norm <- ggplot(df.tt.norm, aes(year, jobs.norm, color = field)) +
-geom_point(size = 4) +
-geom_line(size = 2) +
+geom_point(size = 2) +
+geom_line(size = 1) +
 scale_x_continuous(breaks = dates) +
 scale_color_discrete(name = '', labels = fields) +
 ggtitle(paste('Normalized tenure track jobs on Linguist List:', start, '-', end)) +
@@ -602,7 +618,7 @@ theme(plot.title = element_text(size = 22, face = 'bold'),
 trends.norm
 
 # Save plot
-ggsave(plot=trends, filename= paste('Figures/TT_Trends_Norm_',start,'-',end,'.pdf',sep = ''), height=8, width=14)
+ggsave(plot=trends.norm, filename= paste('Figures/TT_Trends_Norm_',start,'-',end,'.pdf',sep = ''), height=8, width=14)
 
 
 jobs.norm <- ggplot(df.tt.norm, aes(field, jobs.norm)) + geom_boxplot(aes(color = field)) + 
